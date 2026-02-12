@@ -1,0 +1,57 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
+
+	"github.com/Fleexa-Graduation-Project/Backend/models"
+	"github.com/Fleexa-Graduation-Project/Backend/internal/telemetry"
+	"github.com/Fleexa-Graduation-Project/Backend/internal/alerts"
+	"github.com/Fleexa-Graduation-Project/Backend/pkg/db"
+	"github.com/Fleexa-Graduation-Project/Backend/pkg/logger")
+
+var (
+	log *slog.Logger
+)
+
+// for Cold Start
+func init() {
+
+	log = logger.InitLogger()
+	log.Info("IoT Ingestion: Cold Start")
+
+	
+}
+
+func parseTopic(topic string) (deviceID string, messageType string, err error) {
+	parts := strings.Split(topic, "/")
+	if len(parts) != 3 {
+		return "", "", fmt.Errorf("invalid topic format: %s", topic)
+	}
+
+	if parts[0] != "devices" {
+		return "", "", fmt.Errorf("invalid topic prefix: %s", topic)
+	}
+
+	return parts[1], parts[2], nil
+}
+
+func HandleRequest(ctx context.Context, event events.IoTButtonEvent) (string, error) {
+
+	log.Info("Received new IoT message", "event_data", event)
+
+	// TODO: will add the DynamoDB save logic here later
+
+	return "Success", nil
+}
+
+func main() {
+
+	lambda.Start(HandleRequest)
+}

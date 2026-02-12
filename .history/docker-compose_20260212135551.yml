@@ -1,0 +1,8 @@
+
+services:
+  localstack:
+    container_name: localstack_fleexa
+    image: localstack/localstack
+    ports:
+      - "4566:4566"            # LocalStack Gateway
+    environment:
