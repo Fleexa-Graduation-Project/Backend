@@ -12,6 +12,7 @@ import (
 
 	"github.com/Fleexa-Graduation-Project/Backend/models"
 	"github.com/Fleexa-Graduation-Project/Backend/pkg/db"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 )
 
 const (
@@ -45,6 +46,10 @@ func (s *StateStore) UpdateFromTelemetry(ctx context.Context,tel models.Telemetr
 	
 	opState, health := ExtractState(tel.Type, tel.Payload)
 	status := "ONLINE"
+	payload, err := attributevalue.Marshal(tel.Payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
 
 	input := &dynamodb.UpdateItemInput{
 		TableName: aws.String(s.TableName),
@@ -62,6 +67,7 @@ func (s *StateStore) UpdateFromTelemetry(ctx context.Context,tel models.Telemetr
 				#status = :status,
 				operational_state = :op_state,
 				health = :health,
+				payload = :payload,
 				last_seen_at = :last_seen,
 				updated_at = :updated_at
 		`),
@@ -74,12 +80,13 @@ func (s *StateStore) UpdateFromTelemetry(ctx context.Context,tel models.Telemetr
 			":status":     &types.AttributeValueMemberS{Value: status},
 			":op_state":   &types.AttributeValueMemberS{Value: opState},
 			":health":     &types.AttributeValueMemberS{Value: health},
+			":payload":    payload, // This stores the raw map (temp, gas_level, etc.)
 			":last_seen":  &types.AttributeValueMemberN{Value: fmt.Sprint(tel.Timestamp)},
 			":updated_at": &types.AttributeValueMemberN{Value: fmt.Sprint(now)},
 		},
 	}
 
-	_, err := s.Client.UpdateItem(ctx, input)
+	_, err = s.Client.UpdateItem(ctx, input)
 	if err != nil {
 		return fmt.Errorf("failed to update device state: %w", err)
 	}
@@ -136,4 +143,36 @@ func ConnectionStatus(lastSeenAt int64) string {
 		return "OFFLINE"
 	}
 	return "ONLINE"
+}
+
+
+
+// gwr the live status of all devices from the db
+func (store *StateStore) GetAllStates(ctx context.Context) ([]models.DeviceState, error) {
+	// A "Scan" goes through the whole table. 
+	// Perfect for a dashboard that needs to see all devices!
+	input := &dynamodb.ScanInput{
+		TableName: aws.String(store.TableName),
+	}
+
+	result, err := store.Client.Scan(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan device states: %w", err)
+	}
+
+	var states []models.DeviceState
+
+	// Loop through the raw database items and convert them into our Go Structs
+	for _, item := range result.Items {
+		var state models.DeviceState
+		err = attributevalue.UnmarshalMap(item, &state)
+		if err != nil {
+			// If one device is corrupted, we log it but keep loading the others!
+			fmt.Printf("Warning: failed to unmarshal a device state: %v\n", err)
+			continue
+		}
+		states = append(states, state)
+	}
+
+	return states, nil
 }
