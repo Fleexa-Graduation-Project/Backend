@@ -149,3 +149,33 @@ func (store *TelemetryStore) writeBatchWithRetry(ctx context.Context, requests [
 }
 
 
+// get the recent telemetry readings for a device.
+func (store *TelemetryStore) GetTelemetryHistory(ctx context.Context, deviceID string, limit int32) ([]models.Telemetry, error) {
+	
+	input := &dynamodb.QueryInput{
+		TableName: aws.String(store.TableName),
+		KeyConditionExpression: aws.String("device_id = :id"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":id": &types.AttributeValueMemberS{Value: deviceID},
+		},
+		ScanIndexForward: aws.Bool(false), 
+	}
+
+	if limit > 0 {
+		input.Limit = aws.Int32(limit)
+	}
+
+	result, err := store.Client.Query(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query telemetry history: %w", err)
+	}
+
+	var history []models.Telemetry
+	
+	err = attributevalue.UnmarshalListOfMaps(result.Items, &history)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal telemetry history: %w", err)
+	}
+
+	return history, nil
+}
