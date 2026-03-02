@@ -145,34 +145,69 @@ func ConnectionStatus(lastSeenAt int64) string {
 	return "ONLINE"
 }
 
-
-
-// gwr the live status of all devices from the db
+// retrieve all devices states for the dashboard
 func (store *StateStore) GetAllStates(ctx context.Context) ([]models.DeviceState, error) {
-	// A "Scan" goes through the whole table. 
-	// Perfect for a dashboard that needs to see all devices!
-	input := &dynamodb.ScanInput{
-		TableName: aws.String(store.TableName),
-	}
-
-	result, err := store.Client.Scan(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to scan device states: %w", err)
-	}
-
 	var states []models.DeviceState
+	
+	var lastEvaluatedKey map[string]types.AttributeValue
 
-	// Loop through the raw database items and convert them into our Go Structs
-	for _, item := range result.Items {
-		var state models.DeviceState
-		err = attributevalue.UnmarshalMap(item, &state)
-		if err != nil {
-			// If one device is corrupted, we log it but keep loading the others!
-			fmt.Printf("Warning: failed to unmarshal a device state: %v\n", err)
-			continue
+	// Keep scanning until we get all devices
+	for {
+		input := &dynamodb.ScanInput{
+			TableName: aws.String(store.TableName),
+			ExclusiveStartKey: lastEvaluatedKey, // Start where the last page left off
 		}
-		states = append(states, state)
+
+		result, err := store.Client.Scan(ctx, input)  // works as select * w/o WHERE clause
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan device states: %w", err)
+		}
+
+		for _, item := range result.Items {
+			var state models.DeviceState
+			err = attributevalue.UnmarshalMap(item, &state)
+			if err != nil {
+				fmt.Printf("Warning: failed to unmarshal a device state: %v\n", err)
+				continue
+			}
+			states = append(states, state)
+		}
+		lastEvaluatedKey = result.LastEvaluatedKey
+		if lastEvaluatedKey == nil {
+			break 
 	}
+}
 
 	return states, nil
+}
+
+
+
+// retrieve the device state by id
+func (s *StateStore) GetStateByID(ctx context.Context, deviceID string) (*models.DeviceState, error) {
+	input := &dynamodb.GetItemInput{
+		TableName: aws.String(s.TableName),
+		Key: map[string]types.AttributeValue{
+			"device_id": &types.AttributeValueMemberS{Value: deviceID},
+		},
+	}
+
+	result, err := s.Client.GetItem(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device: %w", err)
+	}
+
+	// If the device doesn't exist, return an empty item map
+	if result.Item == nil {
+		return nil, nil 
+	}
+
+
+	var state models.DeviceState
+	err = attributevalue.UnmarshalMap(result.Item, &state)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal device state: %w", err)
+	}
+
+	return &state, nil
 }
