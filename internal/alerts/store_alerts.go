@@ -21,7 +21,6 @@ type AlertStore struct {
 	TableName string
 }
 
-// NewAlertStore initializes the alert store
 func NewAlertStore() (*AlertStore, error) {
 	tableName := os.Getenv("DYNAMODB_ALERTS_TABLE")
 	if tableName == "" {
@@ -103,4 +102,34 @@ func (store *AlertStore) GetAlertsBySeverity(
 	}
 
 	return alerts, nil
+}
+
+//return recent alerts for a specific device
+func (store *AlertStore) GetAlertsByDevice(ctx context.Context, deviceID string, limit int32) ([]models.Alert, error) {
+    const defaultLimit int32 = 20
+    if limit <= 0 {
+        limit = defaultLimit
+    }
+
+    input := &dynamodb.QueryInput{
+        TableName:              aws.String(store.TableName),
+        KeyConditionExpression: aws.String("device_id = :id"),
+        ExpressionAttributeValues: map[string]types.AttributeValue{
+            ":id": &types.AttributeValueMemberS{Value: deviceID},
+        },
+        ScanIndexForward: aws.Bool(false), //newest first
+        Limit:            aws.Int32(limit),
+    }
+
+    res, err := store.Client.Query(ctx, input)
+    if err != nil {
+        return nil, fmt.Errorf("failed to query alerts for device %s: %w", deviceID, err)
+    }
+
+    var alertList []models.Alert
+    if err = attributevalue.UnmarshalListOfMaps(res.Items, &alertList); err != nil {
+        return nil, fmt.Errorf("failed to unmarshal alerts for device %s: %w", deviceID, err)
+    }
+
+    return alertList, nil
 }
