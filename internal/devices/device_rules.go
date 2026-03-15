@@ -37,7 +37,7 @@ var Rules = map[string]DeviceRules{
 					return "BRIGHT"
 				}
 				if level < 200 {
-					return "DIM"
+					return "DARK"
 				}
 				return "NORMAL"
 			}
@@ -82,6 +82,27 @@ var Rules = map[string]DeviceRules{
 				return "DEGRADED"
 			}
 			return "HEALTHY"
+		},
+	},
+
+	"gas-sensor": {
+		ExtractOperational: func(payload map[string]interface{}) string {
+			if alarmOn, ok := payload["alarm_on"].(bool); ok {
+				if alarmOn {
+					return "DANGER"
+				}
+				return "SAFE"
+			}
+			if status, ok := payload["status"].(string); ok {
+				return status
+			}
+			return "UNKNOWN"
+		},
+		EvaluateHealth: func(op string) string {
+			if op == "SAFE" {
+				return "HEALTHY"
+			}
+			return "DEGRADED"
 		},
 	},
 }
