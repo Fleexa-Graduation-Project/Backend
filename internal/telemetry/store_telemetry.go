@@ -71,7 +71,6 @@ func (store *TelemetryStore) SaveTelemetryBatch(ctx context.Context, dataList []
 
 	defaultExpiry := time.Now().Add(7 * 24 * time.Hour).Unix()
 
-	// Process in chunks of 25 (DynamoDB hard limit)
 	for i := 0; i < len(dataList); i += dynamoBatchLimit {
 
 		end := i + dynamoBatchLimit
@@ -109,13 +108,10 @@ func (store *TelemetryStore) SaveTelemetryBatch(ctx context.Context, dataList []
 	return nil
 }
 
-
-// writeBatchWithRetry writes a single chunk and retries any UnprocessedItems
 func (store *TelemetryStore) writeBatchWithRetry(ctx context.Context, requests []types.WriteRequest) error {
 	pending := requests
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		// Exponential backoff on retries (100ms, 200ms, 400ms)
 		if attempt > 0 {
 			backoff := time.Duration(1<<uint(attempt-1)) * 100 * time.Millisecond
 			select {
@@ -136,7 +132,7 @@ func (store *TelemetryStore) writeBatchWithRetry(ctx context.Context, requests [
 			return fmt.Errorf("batch write attempt %d failed: %w", attempt+1, err)
 		}
 
-		// Check for unprocessed items (DynamoDB throttling)
+		// Check for unprocessed items
 		unprocessed := output.UnprocessedItems[store.TableName]
 		if len(unprocessed) == 0 {
 			return nil
@@ -149,33 +145,39 @@ func (store *TelemetryStore) writeBatchWithRetry(ctx context.Context, requests [
 }
 
 
-// get the recent telemetry readings for a device.
-func (store *TelemetryStore) GetTelemetryHistory(ctx context.Context, deviceID string, limit int32) ([]models.Telemetry, error) {
-	
-	input := &dynamodb.QueryInput{
-		TableName: aws.String(store.TableName),
-		KeyConditionExpression: aws.String("device_id = :id"),
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":id": &types.AttributeValueMemberS{Value: deviceID},
-		},
-		ScanIndexForward: aws.Bool(false), 
-	}
+//get recent readings for a device.
+func (store *TelemetryStore) GetTelemetryHistory(ctx context.Context, deviceID string, limit int32, since int64) ([]models.Telemetry, error) {
+    keyCondition := "device_id = :id"
+    exprAttrValues := map[string]types.AttributeValue{
+        ":id": &types.AttributeValueMemberS{Value: deviceID},
+    }
 
-	if limit > 0 {
-		input.Limit = aws.Int32(limit)
-	}
+    input := &dynamodb.QueryInput{
+        TableName:                 aws.String(store.TableName),
+        KeyConditionExpression:    aws.String(keyCondition),
+        ExpressionAttributeValues: exprAttrValues,
+        ScanIndexForward:          aws.Bool(false),
+    }
 
-	result, err := store.Client.Query(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query telemetry history: %w", err)
-	}
+    if since > 0 {
+        input.KeyConditionExpression = aws.String("device_id = :id AND #ts >= :since")
+        input.ExpressionAttributeNames = map[string]string{"#ts": "timestamp"}
+        input.ExpressionAttributeValues[":since"] = &types.AttributeValueMemberN{Value: fmt.Sprint(since)}
+    }
 
-	var history []models.Telemetry
-	
-	err = attributevalue.UnmarshalListOfMaps(result.Items, &history)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal telemetry history: %w", err)
-	}
+    if limit > 0 {
+        input.Limit = aws.Int32(limit)
+    }
 
-	return history, nil
+    result, err := store.Client.Query(ctx, input)
+    if err != nil {
+        return nil, fmt.Errorf("failed to query telemetry history for device %s: %w", deviceID, err)
+    }
+
+    var history []models.Telemetry
+    if err = attributevalue.UnmarshalListOfMaps(result.Items, &history); err != nil {
+        return nil, fmt.Errorf("failed to unmarshal telemetry history for device %s: %w", deviceID, err)
+    }
+
+    return history, nil
 }
