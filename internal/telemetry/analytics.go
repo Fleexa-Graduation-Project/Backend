@@ -7,7 +7,10 @@ import (
 	"slices"
 	"time"
 
-	"github.com/Fleexa-Graduation-Project/Backend/models"
+
+	
+    "github.com/Fleexa-Graduation-Project/Backend/models"
+
 )
 
 type ChartPoint struct {
@@ -23,21 +26,22 @@ type TempState struct {
 }
 
 
-// Export PeriodCutoff so callers can pass the same cutoff to the DB query.
-func PeriodCutoff(period string) int64 {
-    switch period {
-    case "24h":
-        return time.Now().Add(-24 * time.Hour).Unix()
-    case "7d":
-        return time.Now().Add(-7 * 24 * time.Hour).Unix()
-    case "1m":
-        return time.Now().Add(-30 * 24 * time.Hour).Unix()
-    default:
-        return 0
-    }
+ func PeriodCutoff(now int64, period string) int64 {
+   switch period {
+	case "1h":
+		return now - 3600
+	case "24h":
+		return now - 86400 // 24 * 60 * 60
+	case "7d":
+		return now - 604800 // 7 * 24 * 60 * 60
+	case "1m":
+		return now - 2592000 // 30 * 24 * 60 * 60
+	default:
+		return 0
+	}
 }
 
-func FilterTime(history []models.Telemetry, metric string, period string) []ChartPoint {
+func FilterTime(history []models.Telemetry, metric string, period string, now int64) []ChartPoint {
     var timeFormat string
     switch period {
     case "24h":
@@ -48,7 +52,7 @@ func FilterTime(history []models.Telemetry, metric string, period string) []Char
         timeFormat = "2006-01-02"
     }
 
-    cutoff := PeriodCutoff(period)
+    cutoff := PeriodCutoff(now, period)
 
     var mapCapacity int
     switch period {
@@ -107,7 +111,33 @@ func FilterTime(history []models.Telemetry, metric string, period string) []Char
     return chartResult
 }
 
-func CalculateTempState(history []models.Telemetry, metric string) (TempState, error) {
+func TimeAgo(ts int64, now int64) string {
+	diff := now - ts
+	if diff < 60 {
+		return "Just now"
+	}
+	mins := diff / 60
+	if mins < 60 {
+		if mins == 1 {
+			return "1 min ago"
+		}
+		return fmt.Sprintf("%d mins ago", mins)
+	}
+	hours := mins / 60
+	if hours < 24 {
+		if hours == 1 {
+			return "1 hour ago"
+		}
+		return fmt.Sprintf("%d hours ago", hours)
+	}
+	days := hours / 24
+	if days == 1 {
+		return "1 day ago"
+	}
+	return fmt.Sprintf("%d days ago", days)
+}
+
+func CalculateTempState(history []models.Telemetry, metric string, now int64) (TempState, error) {
     if len(history) == 0 {
         return TempState{}, fmt.Errorf("no data")
     }
@@ -116,7 +146,7 @@ func CalculateTempState(history []models.Telemetry, metric string) (TempState, e
     overallMax := -math.MaxFloat64
     overallSum := 0.0
     overallCount := 0
-    cutoffTime := time.Now().Add(-24 * time.Hour).Unix()
+    cutoffTime := now - 86400
 
     for _, record := range history {
         if record.Timestamp < cutoffTime {
@@ -154,3 +184,83 @@ func CalculateTempState(history []models.Telemetry, metric string) (TempState, e
         Average: math.Round((overallSum/float64(overallCount))*10) / 10,
     }, nil
 }
+
+
+
+//calculating the avg unlock time of the door based on the last 24h
+func CalculateAvgUnlock(history []models.Telemetry, now int64) float64 {
+	if len(history) == 0 {
+		return 0
+	}
+
+	var totalUnlockTime float64
+	var unlockCycle int
+	var unlockTime int64
+
+	
+	for i := len(history) - 1; i >= 0; i-- {
+		record := history[i]
+		state, ok := record.Payload["lock_state"].(string)
+		if !ok {
+			continue
+		}
+
+		if state == "UNLOCKED" && unlockTime == 0 {
+			unlockTime = record.Timestamp   //door opened, start timer
+		} else if state == "LOCKED" && unlockTime > 0 {
+			duration := record.Timestamp - unlockTime //door closed, calculate duration
+			if duration > 0 {
+				totalUnlockTime += float64(duration)
+				unlockCycle++
+			}
+			unlockTime = 0         //reset for the next cycle
+		}
+	}
+
+	if unlockTime > 0 {  // if door is still open
+		duration := now - unlockTime
+		if duration > 0 {   // calculate duration up to now
+			totalUnlockTime += float64(duration)
+			unlockCycle++
+		}
+	}
+
+	if unlockCycle == 0 {
+		return 0 
+	}
+
+	// convert time from sec to min and calculate avg
+	avgMinutes := (totalUnlockTime / 60.0) / float64(unlockCycle)
+	return math.Round(avgMinutes*10) / 10
+}
+
+func FormatDoorEvents(history []models.Telemetry) []map[string]interface{} {
+	formatted := make([]map[string]interface{}, 0, len(history))
+	
+	for _, record := range history {
+		state, ok := record.Payload["lock_state"].(string)
+		if !ok {
+			continue
+		}
+		
+		// Format the event label
+		var label string
+		if state == "UNLOCKED" {
+			label = "Door unlocked"
+		} else {
+			label = "Door locked"
+		}
+
+		// Format the time string (e.g., "8:49 PM")
+		t := time.Unix(record.Timestamp, 0)
+		timeStr := t.Format("3:04 PM")
+
+		formatted = append(formatted, map[string]interface{}{
+			"event":     label,
+			"time":      timeStr,
+			"timestamp": record.Timestamp, // Keep raw just in case Flutter needs it for sorting
+		})
+	}
+	return formatted
+}
+

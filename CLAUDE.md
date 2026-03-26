@@ -1,0 +1,165 @@
+# Claude Development Rules
+
+## First Step: Understand the Project
+
+Before writing or modifying any code, you must fully understand the project.
+
+1. Read the relevant parts of the **entire codebase** to understand the system context.
+2. Review related **PDF documentation** if available.
+3. Review **Fleexa UI.pdf** to understand the expected behavior and final result.
+4. Search the codebase for existing implementations before adding new logic.
+
+Do **not** create new code if the same logic already exists, unless the new implementation clearly improves **performance, logic, or runtime efficiency**.
+
+---
+
+# Change Approval Rule (Important)
+
+Before modifying, deleting, or creating any file or code:
+
+1. **Show the proposed modifications first.**
+
+2. Clearly display:
+
+   * The file(s) that will be changed
+   * The exact code modifications
+   * What will be removed
+   * What will be added
+   * A short explanation of the modification and the reasoning behind it
+   * References to relevant files or documentation when useful
+
+3. Wait for **explicit confirmation from the user** before applying the changes.
+
+Never directly modify or delete code without showing the proposed changes first.
+
+---
+
+# Guidance Behavior
+
+When discussing solutions with the user:
+
+* If the user proposes an approach or function, evaluate it and explain whether it is correct.
+* Explain the underlying concept when necessary.
+* Point to relevant files or documentation in the project that help clarify the logic.
+
+The goal is to help the user understand the reasoning behind changes.
+
+---
+
+# Implementation Workflow
+
+When working on a task or issue:
+
+1. Understand the problem described in the issue.
+2. Search the codebase for relevant files and existing patterns.
+3. Reuse or extend existing logic whenever possible.
+4. Propose the required modifications.
+5. Wait for user approval.
+6. After approval, implement the changes with **minimal modifications**.
+7. Create a **clear and descriptive commit message** explaining what was changed and why.
+
+---
+
+# Go (Golang) Coding Standards
+
+Follow modern **Go best practices** and stay consistent with the latest Go updates and features.
+
+## Code Structure
+
+* Write **simple and efficient functions**.
+* Prefer **single-purpose functions** when possible.
+* Keep code readable and easy to maintain.
+* Avoid unnecessary abstractions.
+
+---
+
+## Performance
+
+Use Go’s strengths effectively:
+
+* Efficient runtime
+* Concurrency (goroutines when appropriate)
+* Channels when beneficial
+* Simplicity
+* Strong tooling
+
+The project runs on **AWS Free Tier**, so the code must be **resource efficient and lightweight**, while also addressing **cold start issues**.
+
+Always prefer solutions that:
+
+* Reduce runtime overhead
+* Use minimal memory
+* Avoid unnecessary computation
+
+---
+
+# Error Handling
+
+Use Go’s error handling properly.
+
+* Always check returned errors.
+* Never ignore errors.
+* Provide **clear and descriptive error messages**.
+
+Error messages must include enough context to debug problems, such as:
+
+* Request parameters
+* Response body (when relevant)
+* Status codes
+* Operation being performed
+* Runtime details
+
+The goal is that failures can be understood **without additional debugging**.
+
+---
+
+# Code Style
+
+* All **comments must be written in English**.
+* Write clear and meaningful comments when necessary.
+
+---
+
+# General Development Principles
+
+* Keep implementations **simple and focused**.
+* Avoid rewriting working code unless it clearly improves **performance, logic, or runtime**.
+* Prefer modifying existing logic instead of duplicating it.
+* Maintain consistency with the existing project structure.
+
+---
+
+#  Flow
+
+When working with the user, follow this interaction process:
+
+1. **User describes what they want to do.**
+
+2. **Understand the request.**
+   Analyze the problem and ask clarification questions if necessary.
+
+3. **Explore the codebase.**
+   Search for relevant files, functions, and existing implementations that relate to the request.
+
+4. **Explain the approach.**
+   Describe the proposed solution and the reasoning behind it.
+
+5. **Show the proposed modifications.**
+   Clearly display:
+
+   * Files that will be modified
+   * Code that will be added
+   * Code that will be removed
+   * Explanation of the changes
+
+6. **Wait for user confirmation.**
+   Do not modify any files until the user explicitly approves the changes.
+
+7. **Implement the changes.**
+   Apply the approved modifications while following all project rules and Go coding standards.
+
+8. **Explain the result.**
+   Briefly summarize what was implemented and why.
+
+9. **Provide the commit message.**
+   Create a clear and descriptive commit message describing the changes.

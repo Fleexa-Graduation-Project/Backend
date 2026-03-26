@@ -1,0 +1,170 @@
+# Fleexa API Specification (v1)
+
+**Base URL:** `http://localhost:8080/api/v1`
+**Content-Type:** `application/json`
+
+---
+
+## 1. Device Dashboard & State
+
+### 1.1 Get System Overview (All Devices)
+
+Retrieves the live status of all devices for the main dashboard.
+
+- **Endpoint:** `GET /devices`
+- **Response (200 OK):**
+  ```json
+  {
+    "data": [
+      {
+        "device_id": "temp-sensor-01",
+        "type": "sensor",
+        "status": "ONLINE",
+        "operational_state": "WARM",
+        "health": "DEGRADED",
+        "payload": {
+          "temp": 29.0
+        },
+        "last_seen_at": 1708434000
+      },
+       {
+        "device_id": "ac-actuator-01",
+        "type": "actuator",
+        "status": "ONLINE",
+        "operational_state": "ON",
+        "health": "HEALTHY",
+        "payload": {
+          "power": "ON",
+          "target_temp": 24.0,
+          "mode": "COOLING"
+        },
+        "last_seen_at": 1708434000
+      }
+    ]
+  }
+  ```
+
+### 1.2 Get Specific Device Details
+
+Retrieves the current state of a single device when a user taps on it in the app.
+
+- **Endpoint:** `GET /devices/:id`
+- **Response (200 OK):**
+  ```json
+ {
+      "device_id": "gas-sensor-01",
+      "type": "sensor",
+      "status": "ONLINE",
+      "operational_state": "SAFE",
+      "health": "HEALTHY",
+      "payload": { 
+        "gas_level": 120, 
+        "alarm_on": false 
+      }
+ }
+  ```
+
+---
+
+## 2. Telemetry, Analytics, and Alerts (The Insights)
+
+### 2.1 Get Device Telemetry History
+
+Retrieves historical sensor readings to populate the "Insights" charts.
+
+- **Endpoint:** `GET /devices/:id/telemetry`
+- **Query Parameters (Optional):**
+  - `start` (int): Unix timestamp for start time
+  - `end` (int): Unix timestamp for end time
+  - `limit` (int): Number of records to return (default: 50)
+- **Response (200 OK):**
+  ```json
+  {
+    "device_id": "temp-sensor-01",
+    "data": [
+      { "timestamp": 1708434000, "payload": { "temp": 29.0 } },
+      { "timestamp": 1708433940, "payload": { "temp": 28.5 } }
+    ]
+  }
+  ```
+
+### 2.2 Get Sensor Analytics (Min/Max/Avg)
+
+Calculates aggregated data for a specific sensor over a requested time period to display on the stat blocks.
+
+- **Endpoint:** `GET /devices/:id/analytics`
+- **Query Parameters:**
+  - `sensor` (string): The payload key (e.g., `temp`, `gas_level`, `light_level`)
+  - `period` (string): Time window (e.g., `24h`, `7d`)
+- **Response (200 OK):**
+  ```json
+  {
+    "device_id": "temp-sensor-01",
+    "period": "24h",
+    "analytics": {
+      "min": 22.0,
+      "max": 29.0,
+      "average": 25.4
+    }
+  }
+  ```
+
+### 2.3 Get Device Alerts
+
+Retrieves critical events and warnings (e.g., Gas Leaks) to display in the "Warnings & Alerts" section.
+
+- **Endpoint:** `GET /devices/:id/alerts`
+- **Response (200 OK):**
+  ```json
+  {
+    "device_id": "gas-sensor-01",
+    "data": [
+      {
+        "timestamp": 1708430000,
+        "severity": "CRITICAL",
+        "payload": { "gas_level": 950, "status": "DANGER", "alarm_on": true }
+      }
+    ]
+  }
+  ```
+
+---
+
+## 3. Device Control (Actuators)
+
+### 3.1 Send Command to Device
+
+Sends an instruction to an actuator (e.g., locking a door, changing A/C temperature). This writes to the `Fleexa_Commands` table, which the system uses to message the device.
+
+- **Endpoint:** `POST /devices/:id/commands`
+- **Request Body:**
+  ```json
+  {
+    "action": "SET_STATE",
+    "parameters": {
+      "power": "ON",
+      "target_temp": 24.0,
+      "mode": "COOLING"
+    }
+  }
+  ```
+- **Response (202 Accepted):**
+
+  ```json
+  {
+    "message": "Command dispatched",
+    "request_id": "req-12345"
+  }
+  ```
+
+  ***
+
+## 4. Authentication & Security (Upcoming)
+
+_User authentication (Sign Up, Sign In, Password Reset) will be integrated via AWS Cognito or a dedicated Auth Service._
+
+### 4.1 Planned Auth Flows
+
+- **Sign In:** `POST /auth/login` (Returns JWT Token)
+- **Sign Up:** `POST /auth/register`
+- **Verify:** `POST /auth/verify`
