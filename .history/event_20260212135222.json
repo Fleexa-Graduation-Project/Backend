@@ -1,0 +1,11 @@
+{
+  "topic": "devices/sensor_01/telemetry",
+  "payload": {
+    "device_id": "sensor_01",
+    "timestamp": 1709251200,
+    "type": "temp-sensor",
+    "payload": {
+      "temp": 25.5
+    }
+  }
+}
