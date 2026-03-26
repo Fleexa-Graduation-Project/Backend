@@ -1,0 +1,7 @@
+
+CLAUDE.md
+*.pdf
+.history/
+.vscode/
+.env
+
