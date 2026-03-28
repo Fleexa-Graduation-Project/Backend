@@ -105,4 +105,18 @@ var Rules = map[string]DeviceRules{
 			return "DEGRADED"
 		},
 	},
+	"ac-actuator": {
+		ExtractOperational: func(payload map[string]interface{}) string {
+			if state, ok := payload["power_state"].(string); ok {
+				return state      //returns "ON" or "OFF"
+			}
+			return "UNKNOWN"
+		},
+		EvaluateHealth: func(op string) string {
+			if op == "UNKNOWN" {
+				return "DEGRADED"
+			}
+			return "HEALTHY"
+		},
+	},
 }
