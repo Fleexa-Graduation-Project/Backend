@@ -258,9 +258,108 @@ func FormatDoorEvents(history []models.Telemetry) []map[string]interface{} {
 		formatted = append(formatted, map[string]interface{}{
 			"event":     label,
 			"time":      timeStr,
-			"timestamp": record.Timestamp, // Keep raw just in case Flutter needs it for sorting
+			"timestamp": record.Timestamp, 
 		})
 	}
 	return formatted
 }
 
+//calculating the total used hours for the last 5 days
+func CalculateACUsage(history []models.Telemetry, now int64) []ChartPoint {
+	if len(history) == 0 {
+		return []ChartPoint{}
+	}
+	
+	dailyUsage := make(map[string]float64)
+	var onTime int64
+	
+	for i := len(history) - 1; i >= 0; i-- {  //get used intervals
+		record := history[i]
+		state, ok := record.Payload["power_state"].(string)
+		if !ok {
+			continue
+		}
+
+		if state == "ON" && onTime == 0 {
+			onTime = record.Timestamp
+		} else if state == "OFF" && onTime > 0 {
+			duration := record.Timestamp - onTime
+			if duration > 0 {
+				dayLabel := time.Unix(onTime, 0).Format("Mon")
+				dailyUsage[dayLabel] += float64(duration)
+			}
+			onTime = 0
+		}
+	}
+
+	
+	if onTime > 0 {              // if AC is still on
+		duration := now - onTime
+		if duration > 0 {
+			dayLabel := time.Unix(onTime, 0).Format("Mon")
+			dailyUsage[dayLabel] += float64(duration)
+		}
+	}
+	
+	var chartResult []ChartPoint
+	for label, totalSeconds := range dailyUsage {  //convert to hours
+		hours := totalSeconds / 3600.0
+		chartResult = append(chartResult, ChartPoint{
+			Label: label,
+			Value: math.Round(hours*10) / 10, 
+		})
+	}
+
+	return chartResult
+}
+
+
+func FormatACTime(seconds int64) string {
+	if seconds <= 0 {
+		return "0m"
+	}
+	hours := seconds / 3600
+	minutes := (seconds % 3600) / 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%dh %dm", hours, minutes)
+	}
+	return fmt.Sprintf("%dm", minutes)
+}
+
+//calculating ac run time last 24h
+func CalculateACRunTime(history []models.Telemetry, now int64) int64 {
+	if len(history) == 0 {
+		return 0
+	}
+
+	var totalSeconds int64 = 0
+	var onTime int64 = 0
+
+	for i := len(history) - 1; i >= 0; i-- {
+		record := history[i]
+		state, ok := record.Payload["power_state"].(string)
+		if !ok {
+			continue
+		}
+
+		if state == "ON" && onTime == 0 {
+			onTime = record.Timestamp   
+		} else if state == "OFF" && onTime > 0 {
+			duration := record.Timestamp - onTime 
+			if duration > 0 {
+				totalSeconds += duration  
+			}
+			onTime = 0 
+		}
+	}
+	
+	if onTime > 0 {
+		duration := now - onTime
+		if duration > 0 {
+			totalSeconds += duration
+		}
+	}
+
+	return totalSeconds
+}
