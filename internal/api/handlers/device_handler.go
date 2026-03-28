@@ -5,6 +5,7 @@ import (
     "net/http"
     "time"
     "fmt"
+    "context"
 
     "github.com/Fleexa-Graduation-Project/Backend/internal/devices"
     "github.com/Fleexa-Graduation-Project/Backend/internal/telemetry"
@@ -67,7 +68,7 @@ func showDoorStats(payload map[string]interface{}, history []models.Telemetry, n
 		return
 	}
 
-	// Format recent events for the UI
+	// Format recent events
 	payload["recent_events"] = telemetry.FormatDoorEvents(history)
 	
 	// Format last activity time (e.g., "10 mins ago")
@@ -107,6 +108,53 @@ func addDoorInsights(response gin.H, data []models.Telemetry, state *models.Devi
 	}
 }
 
+//getting info for AC based on temp and timer
+func (handler *DeviceHandler) showACStats(ctx context.Context, payload map[string]interface{}, now int64) {
+	
+	insideTemp := 0.0
+
+	tempState, err := handler.StateStore.GetStateByID(ctx, "temp-sensor-01")  //temp sensor name may be changed
+	if err == nil && tempState != nil {
+		if val, ok := tempState.Payload["temp"].(float64);
+        ok {
+			insideTemp = val
+		}
+	}
+	payload["inside_temp"] = insideTemp
+	
+	payload["outside_temp"] = 36.0 // demo for now, api fetch later
+
+	// calculate remaining timer time in manual mode
+	if timeremaining, ok := payload["timer_end_timestamp"].(float64); ok {
+		timerEnd := int64(timeremaining)
+		if timerEnd > now {
+			payload["time_remaining"] = telemetry.FormatACTime(timerEnd - now)
+		} else
+         {
+			payload["time_remaining"] = "Ended"
+		}
+	} else 
+    {
+		payload["time_remaining"] = "No active timer"
+	}
+
+	// calculating ac run time
+	if powerState, ok := payload["power_state"].(string); 
+    ok && powerState == "ON" {
+		if lastOnFloat, ok := payload["last_turned_on"].(float64); 
+        ok {
+			lastOn := int64(lastOnFloat)
+			payload["running_time"] = telemetry.FormatACTime(now - lastOn)
+		} else {
+			payload["running_time"] = "Unknown"
+		}
+	} else {
+		payload["running_time"] = "Off"
+	}
+}
+
+
+
 // handling GET /devices/:id
 func (handler *DeviceHandler) GetDeviceByID(context *gin.Context) {
     deviceID := context.Param("id")
@@ -134,6 +182,10 @@ func (handler *DeviceHandler) GetDeviceByID(context *gin.Context) {
 			slog.Warn("failed to fetch recent door history", "device_id", deviceID, "error", dbErr)
 		}
 		showDoorStats(state.Payload, recentHistory, now)
+	}
+    if state.Type == "ac-actuator" {
+		now := time.Now().Unix()
+		handler.showACStats(context.Request.Context(), state.Payload, now)
 	}
 
     context.JSON(http.StatusOK, state)
@@ -180,6 +232,17 @@ func (handler *DeviceHandler) GetDeviceTelemetry(context *gin.Context) {
 
         if state.Type == "door-actuator" {
 			addDoorInsights(response, rawData, state, now)
+		}
+        if state.Type == "ac-actuator" {
+			if period == "7d" { 
+				// The Usage Bar Chart
+				response["usage_bar"] = telemetry.CalculateACUsage(rawData, now)
+			}
+			
+			if period == "24h" {
+				totalSeconds := telemetry.CalculateACRunTime(rawData, now)
+				response["running_time"] = telemetry.FormatACTime(totalSeconds)
+			}
 		}
 
     } else {
