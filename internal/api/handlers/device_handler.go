@@ -236,7 +236,7 @@ func (handler *DeviceHandler) GetDeviceTelemetry(context *gin.Context) {
         if state.Type == "ac-actuator" {
 			if period == "7d" { 
 				// The Usage Bar Chart
-				response["usage_bar"] = telemetry.CalculateACUsage(rawData, now)
+				response["usage_bar"] = telemetry.CalculateACUsage(rawData, now, period)
 			}
 			
 			if period == "24h" {
@@ -286,9 +286,58 @@ func (handler *DeviceHandler) GetDeviceAlerts(context *gin.Context) {
 }
 func isHotTier(period string) bool {
     switch period {
-    case "1h", "24h", "7d":
+    case "1h", "24h", "7d", "1m":
         return true
     default:
         return false
     }
+}
+
+// GetSystemOverview handles GET /system/overview
+func (handler *DeviceHandler) GetSystemOverview(context *gin.Context) {
+	timeFilter := context.DefaultQuery("period", "7d") // default -> 7d
+	now := time.Now().Unix()
+	cutoff := telemetry.PeriodCutoff(now, timeFilter)
+
+	
+	states, err := handler.StateStore.GetAllStates(context.Request.Context())
+	if err != nil {
+		context.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch device states"})
+		return
+	}
+
+	onlineCount := 0
+	for _, state := range states {   //count how many online devices
+		if devices.ConnectionStatus(state.LastSeenAt) == "ONLINE" {
+			onlineCount++
+		}
+	}
+
+	systemStatus := "Offline"
+	if onlineCount > 0 {
+		systemStatus = "Connected"
+	}
+    //get alerts
+	alertsList, err := handler.AlertStore.GetAllAlerts(context.Request.Context(), cutoff)
+	if err != nil {
+		slog.Warn("Failed to get alerts for system overview", "error", err)
+	}
+	alertsChart := telemetry.GetAlerts(alertsList, timeFilter)
+
+    //calculate Energy Consumption
+	acData, err := handler.TelemetryStore.GetTelemetryHistory(context.Request.Context(), "ac-01", 0, cutoff)
+	if err != nil {
+		slog.Warn("Failed to fetch AC telemetry for energy chart", "error", err)
+	}
+	
+	acUsage := telemetry.CalculateACUsage(acData, now, timeFilter)
+	energyData := telemetry.CalculateEnergy(acUsage)
+
+
+	context.JSON(http.StatusOK, gin.H{
+		"system_status":  systemStatus,
+		"devices_online": fmt.Sprintf("%d / %d", onlineCount, len(states)),
+		"alerts_chart":   alertsChart,
+        "energy_consumption": energyData,
+	})
 }

@@ -40,19 +40,22 @@ type TempState struct {
 		return 0
 	}
 }
+func GetTimeFormat(period string) string {
+	switch period {
+	case "24h", "1h":
+		return "15:04"
+	case "7d":
+		return "Mon"
+	case "1m":
+		return "Jan 02"
+	default:
+		return "2006-01-02"
+	}
+}
 
 func FilterTime(history []models.Telemetry, metric string, period string, now int64) []ChartPoint {
-    var timeFormat string
-    switch period {
-    case "24h":
-        timeFormat = "15:04"
-    case "7d", "1m":
-        timeFormat = "2006-01-02"
-    default:
-        timeFormat = "2006-01-02"
-    }
-
     cutoff := PeriodCutoff(now, period)
+	timeFormat := GetTimeFormat(period)
 
     var mapCapacity int
     switch period {
@@ -142,6 +145,7 @@ func CalculateTempState(history []models.Telemetry, metric string, now int64) (T
         return TempState{}, fmt.Errorf("no data")
     }
 
+	
     overallMin := math.MaxFloat64
     overallMax := -math.MaxFloat64
     overallSum := 0.0
@@ -155,9 +159,11 @@ func CalculateTempState(history []models.Telemetry, metric string, now int64) (T
 
         if val, exists := record.Payload[metric]; exists {
             var num float64
-            if floatVal, ok := val.(float64); ok {
+            if floatVal, ok := val.(float64); 
+			ok {
                 num = floatVal
-            } else if intVal, ok := val.(int); ok {
+            } else if intVal, ok := val.(int); 
+			ok {
                 num = float64(intVal)
             } else {
                 continue
@@ -265,11 +271,11 @@ func FormatDoorEvents(history []models.Telemetry) []map[string]interface{} {
 }
 
 //calculating the total used hours for the last 5 days
-func CalculateACUsage(history []models.Telemetry, now int64) []ChartPoint {
+func CalculateACUsage(history []models.Telemetry, now int64, period string) []ChartPoint {
 	if len(history) == 0 {
 		return []ChartPoint{}
 	}
-	
+	timeFormat := GetTimeFormat(period)
 	dailyUsage := make(map[string]float64)
 	var onTime int64
 	
@@ -285,7 +291,7 @@ func CalculateACUsage(history []models.Telemetry, now int64) []ChartPoint {
 		} else if state == "OFF" && onTime > 0 {
 			duration := record.Timestamp - onTime
 			if duration > 0 {
-				dayLabel := time.Unix(onTime, 0).Format("Mon")
+				dayLabel := time.Unix(onTime, 0).Format(timeFormat) 
 				dailyUsage[dayLabel] += float64(duration)
 			}
 			onTime = 0
@@ -296,7 +302,7 @@ func CalculateACUsage(history []models.Telemetry, now int64) []ChartPoint {
 	if onTime > 0 {              // if AC is still on
 		duration := now - onTime
 		if duration > 0 {
-			dayLabel := time.Unix(onTime, 0).Format("Mon")
+			dayLabel := time.Unix(onTime, 0).Format(timeFormat) 
 			dailyUsage[dayLabel] += float64(duration)
 		}
 	}
@@ -362,4 +368,59 @@ func CalculateACRunTime(history []models.Telemetry, now int64) int64 {
 	}
 
 	return totalSeconds
+}
+
+
+
+//get alerts by time and severity for entire system (system overview part)
+func GetAlerts(alertList []models.Alert, period string) map[string][]ChartPoint {
+	timeFormat := GetTimeFormat(period)
+	warningMap := make(map[string]float64)
+	criticalMap := make(map[string]float64)
+
+	for _, alert := range alertList {
+		label := time.Unix(alert.Timestamp, 0).Format(timeFormat)
+		if alert.Severity == "WARNING" || alert.Severity == "warning" {
+			warningMap[label]++
+		} else if alert.Severity == "CRITICAL" || alert.Severity == "critical"{
+			criticalMap[label]++
+		}
+	}
+
+	mapToSortedChart := func(m map[string]float64) []ChartPoint {
+		var chart []ChartPoint
+		for k, v := range m {
+			chart = append(chart, ChartPoint{Label: k, Value: v})
+		}
+		slices.SortFunc(chart, func(a, b ChartPoint) int {
+			return cmp.Compare(a.Label, b.Label)
+		})
+		return chart
+	}
+
+	return map[string][]ChartPoint{
+		"warning":  mapToSortedChart(warningMap),
+		"critical": mapToSortedChart(criticalMap),
+	}
+}
+
+
+func CalculateEnergy(acUsage []ChartPoint) []ChartPoint {
+	const dailyPower = 0.132
+	const acPower = 1.5
+
+	var energyChart []ChartPoint
+	
+	for _, point := range acUsage {
+		dailyAC := point.Value * acPower
+		
+		totalConsumption := dailyAC+ dailyPower
+
+		energyChart = append(energyChart, ChartPoint{
+			Label: point.Label,
+			Value: math.Round(totalConsumption*10) / 10,
+		})
+	}
+
+	return energyChart
 }

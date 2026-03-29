@@ -61,11 +61,8 @@ func (store *AlertStore) SaveAlert(ctx context.Context, alert models.Alert) erro
 }
 
 
-func (store *AlertStore) GetAlertsBySeverity(
-	ctx context.Context,
-	severity string,
-	limit int32,
-) ([]models.Alert, error) {
+func (store *AlertStore) GetAlertsBySeverity(ctx context.Context, severity string, limit int32,
+	) ([]models.Alert, error) {
 
 	const defaultLimit int32 = 20
 	if limit <= 0 {
@@ -132,4 +129,32 @@ func (store *AlertStore) GetAlertsByDevice(ctx context.Context, deviceID string,
     }
 
     return alertList, nil
+}
+
+
+//retrieve all alerts in the whole system (system overview part)
+func (store *AlertStore) GetAllAlerts(ctx context.Context, since int64) ([]models.Alert, error) {
+	input := &dynamodb.ScanInput{
+		TableName: aws.String(store.TableName),
+		FilterExpression: aws.String("#ts >= :since"),
+		ExpressionAttributeNames: map[string]string{
+			"#ts": "timestamp",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":since": &types.AttributeValueMemberN{Value: fmt.Sprint(since)},
+		},
+	}
+
+	res, err := store.Client.Scan(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan all alerts: %w", err)
+	}
+
+	var alerts []models.Alert
+	if err = attributevalue.UnmarshalListOfMaps(res.Items, &alerts);
+	  err != nil {
+		return nil, fmt.Errorf("failed to unmarshal alerts: %w", err)
+	}
+
+	return alerts, nil
 }
