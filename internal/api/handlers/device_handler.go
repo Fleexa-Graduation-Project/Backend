@@ -67,11 +67,7 @@ func showDoorStats(payload map[string]interface{}, history []models.Telemetry, n
 		payload["security_alert"] = "SAFE"
 		return
 	}
-
-	// Format recent events
 	payload["recent_events"] = telemetry.FormatDoorEvents(history)
-	
-	// Format last activity time (e.g., "10 mins ago")
 	payload["last_activity_time"] = telemetry.TimeAgo(history[0].Timestamp, now)
 	
 	if lockState, ok := payload["lock_state"].(string); ok && lockState == "UNLOCKED" {
@@ -125,16 +121,17 @@ func (handler *DeviceHandler) showACStats(ctx context.Context, payload map[strin
 	payload["outside_temp"] = 36.0 // demo for now, api fetch later
 
 	// calculate remaining timer time in manual mode
-	if timeremaining, ok := payload["timer_end_timestamp"].(float64); ok {
+	if timeremaining, ok := payload["timer_end_timestamp"].(float64); 
+    ok {
 		timerEnd := int64(timeremaining)
-		if timerEnd > now {
+		if timerEnd == 0 {
+			payload["time_remaining"] = "No active timer"
+		} else if timerEnd > now {
 			payload["time_remaining"] = telemetry.FormatACTime(timerEnd - now)
-		} else
-         {
+		} else {
 			payload["time_remaining"] = "Ended"
 		}
-	} else 
-    {
+	} else {
 		payload["time_remaining"] = "No active timer"
 	}
 
@@ -185,6 +182,13 @@ func (handler *DeviceHandler) GetDeviceByID(context *gin.Context) {
 	}
     if state.Type == "ac-actuator" {
 		now := time.Now().Unix()
+		recentHistory, dbErr := handler.TelemetryStore.GetTelemetryHistory(context.Request.Context(), deviceID, 5, 0)
+		if dbErr != nil {
+			slog.Warn("failed to fetch recent AC history", "device_id", deviceID, "error", dbErr)
+		} else if len(recentHistory) > 0 {
+			state.Payload["recent_events"] = telemetry.FormatACEvents(recentHistory)
+		}
+	
 		handler.showACStats(context.Request.Context(), state.Payload, now)
 	}
 
@@ -325,7 +329,7 @@ func (handler *DeviceHandler) GetSystemOverview(context *gin.Context) {
 	alertsChart := telemetry.GetAlerts(alertsList, timeFilter)
 
     //calculate Energy Consumption
-	acData, err := handler.TelemetryStore.GetTelemetryHistory(context.Request.Context(), "ac-01", 0, cutoff)
+	acData, err := handler.TelemetryStore.GetTelemetryHistory(context.Request.Context(), "ac-01", 0, cutoff)  //ac name may be changed later
 	if err != nil {
 		slog.Warn("Failed to fetch AC telemetry for energy chart", "error", err)
 	}

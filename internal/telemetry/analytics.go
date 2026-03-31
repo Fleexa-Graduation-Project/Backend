@@ -270,6 +270,29 @@ func FormatDoorEvents(history []models.Telemetry) []map[string]interface{} {
 	return formatted
 }
 
+func FormatACEvents(history []models.Telemetry) []map[string]interface{} {
+	formatted := make([]map[string]interface{}, 0, len(history))
+	
+	for _, record := range history {
+		state, ok := record.Payload["power_state"].(string)
+		if !ok {
+			continue
+		}
+		
+		label := "A/C turned " + state
+
+		t := time.Unix(record.Timestamp, 0)
+		timeStr := t.Format("3:04 PM")
+
+		formatted = append(formatted, map[string]interface{}{
+			"event":     label,
+			"time":      timeStr,
+			"timestamp": record.Timestamp, 
+		})
+	}
+	return formatted
+}
+
 //calculating the total used hours for the last 5 days
 func CalculateACUsage(history []models.Telemetry, now int64, period string) []ChartPoint {
 	if len(history) == 0 {
