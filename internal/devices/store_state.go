@@ -96,7 +96,7 @@ func (s *StateStore) UpdateFromTelemetry(ctx context.Context,tel models.Telemetr
 
 
 
-//Extracting operational state and health from the device type and its payload
+//extracting op state and health from the device type and its payload
 func ExtractState(deviceType string,payload map[string]interface{},) (string, string)  {
 
 	deviceRules, ok := Rules[deviceType]

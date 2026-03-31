@@ -11,6 +11,8 @@ import (
     "github.com/Fleexa-Graduation-Project/Backend/internal/telemetry"
     "github.com/Fleexa-Graduation-Project/Backend/models"
 	"github.com/Fleexa-Graduation-Project/Backend/internal/alerts"
+    "github.com/Fleexa-Graduation-Project/Backend/internal/commands"
+	"github.com/Fleexa-Graduation-Project/Backend/internal/iot"
     "github.com/gin-gonic/gin"
 )
 
@@ -18,6 +20,13 @@ type DeviceHandler struct {
     StateStore     *devices.StateStore
     TelemetryStore *telemetry.TelemetryStore
     AlertStore     *alerts.AlertStore
+    CommandStore   *commands.CommandStore 
+	IoTPublisher   *iot.Publisher
+}
+
+type SendCommandRequest struct {
+	Action     string                 `json:"action" binding:"required"`
+	Parameters map[string]interface{} `json:"parameters"`
 }
 
 
@@ -297,7 +306,7 @@ func isHotTier(period string) bool {
     }
 }
 
-// GetSystemOverview handles GET /system/overview
+//handling GET /system/overview
 func (handler *DeviceHandler) GetSystemOverview(context *gin.Context) {
 	timeFilter := context.DefaultQuery("period", "7d") // default -> 7d
 	now := time.Now().Unix()
@@ -343,5 +352,50 @@ func (handler *DeviceHandler) GetSystemOverview(context *gin.Context) {
 		"devices_online": fmt.Sprintf("%d / %d", onlineCount, len(states)),
 		"alerts_chart":   alertsChart,
         "energy_consumption": energyData,
+	})
+}
+
+
+
+//handling POST /devices/:id/commands
+func (handler *DeviceHandler) SendCommand(context *gin.Context) {
+	deviceID := context.Param("id")
+
+	var req SendCommandRequest
+	if err := context.ShouldBindJSON(&req); err != nil {
+		context.JSON(http.StatusBadRequest, gin.H{"error": "invalid command format! action is required."})
+		return
+	}
+
+	requestID := fmt.Sprintf("cmd-%d", time.Now().UnixNano())
+	mqttPayload := map[string]interface{}{
+		"request_id": requestID,
+		"action":     req.Action,
+		"parameters": req.Parameters,
+	}
+
+	topic := fmt.Sprintf("devices/%s/command", deviceID)
+	err := handler.IoTPublisher.Publish(context.Request.Context(), topic, mqttPayload)
+	if err != nil {
+		slog.Error("failed to publish command to iot Core", "device_id", deviceID, "error", err)
+		context.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to communicate with device"})
+		return
+	}
+
+	commandRecord := models.Command{
+		RequestID:  requestID,
+		DeviceID:   deviceID,
+		Timestamp:  time.Now().Unix(),
+		Action:     req.Action,
+		Parameters: req.Parameters,
+	}
+	
+	if storeErr := handler.CommandStore.SaveCommand(context.Request.Context(), commandRecord); storeErr != nil {
+		slog.Warn("Command sent, but failed to save history to DB", "error", storeErr)
+	}
+
+	context.JSON(http.StatusAccepted, gin.H{
+		"message":    "Command dispatched successfully",
+		"request_id": requestID,
 	})
 }
