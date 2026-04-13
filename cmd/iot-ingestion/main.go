@@ -24,10 +24,10 @@ var (
 func init() {
 
 	log = logger.InitLogger()
-	log.Info("IoT Ingestion: Cold Start")
+	log.Info("lambda function-> cold Start...")
 
 	if err := db.NewDynamoDBClient(context.Background()); err != nil {
-		log.Error("Failed to initialize DynamoDB", "error", err)
+		log.Error("failed to initialize DynamoDB", "error", err)
 		panic(err)
 	}
 
@@ -47,6 +47,9 @@ func init() {
 	if err != nil {
 		panic(fmt.Errorf("failed to init device state store: %w", err))
 	}
+
+	log.Info("iot ingestion -> Cold Start Completed. Stores Ready.")
+
 }
 
 func main() {
