@@ -31,7 +31,7 @@ func main() {
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
-		log.Error("dailed to load aws config for iot", "error", err)
+		log.Error("failed to load aws config for iot", "error", err)
 		panic(err)
 	}
 

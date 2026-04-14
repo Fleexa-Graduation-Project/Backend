@@ -18,8 +18,7 @@ var (
 	ErrInvalidPayload  = errors.New("invalid payload")
 )
 
-// ValidateMessage validates incoming MQTT messages
-// Returns isBatch=true if the payload contains a list of items
+//validating incoming messages
 func ValidateMessage(event map[string]interface{}) (
 	deviceID string,
 	messageType string,
@@ -28,7 +27,7 @@ func ValidateMessage(event map[string]interface{}) (
 	err error,
 ) {
 
-	// validating raw event
+	//validating raw event
 	topic, payloadRaw, err := validateEvent(event)
 	if err != nil {
 		return "", "", envelope, false, err

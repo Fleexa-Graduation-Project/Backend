@@ -39,7 +39,7 @@ func NewStateStore() (*StateStore, error) {
 		TableName: tableName,
 	}, nil
 }
-
+//updates live dashboard
 func (s *StateStore) UpdateFromTelemetry(ctx context.Context,tel models.Telemetry,) error {
 
 	now := time.Now().Unix()

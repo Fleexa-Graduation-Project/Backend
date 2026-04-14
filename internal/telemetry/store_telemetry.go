@@ -38,7 +38,7 @@ func NewTelemetryStore() (*TelemetryStore, error) {
 		TableName: tableName,
 	}, nil
 }
-
+//write to db
 func (store *TelemetryStore) SaveTelemetry(ctx context.Context, data models.Telemetry) error {
 	if data.ExpiresAt == 0 {
 		data.ExpiresAt = time.Now().Add(7 * 24 * time.Hour).Unix()
