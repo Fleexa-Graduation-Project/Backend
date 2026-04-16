@@ -6,6 +6,7 @@ import (
     "time"
     "fmt"
     "context"
+	
 
     "github.com/Fleexa-Graduation-Project/Backend/internal/devices"
     "github.com/Fleexa-Graduation-Project/Backend/internal/telemetry"
@@ -21,7 +22,8 @@ type DeviceHandler struct {
     TelemetryStore *telemetry.TelemetryStore
     AlertStore     *alerts.AlertStore
     CommandStore   *commands.CommandStore 
-	IoTPublisher   *iot.Publisher
+    IoTPublisher   *iot.Publisher
+    S3Fetcher      *iot.S3Client
 }
 
 type SendCommandRequest struct {
@@ -41,7 +43,7 @@ func addLightStatus(payload map[string]interface{}, operationalState string) {
     }
 }
 
-func addTempStats(response gin.H, data []models.Telemetry, metric, deviceID string, now int64) {
+/*func addTempStats(response gin.H, data []models.Telemetry, metric, deviceID string, now int64) {
     stats, err := telemetry.CalculateTempState(data, metric, now)
     if err != nil {
         slog.Warn("failed to calculate temp stats", "device_id", deviceID, "metric", metric, "error", err)
@@ -49,7 +51,7 @@ func addTempStats(response gin.H, data []models.Telemetry, metric, deviceID stri
     response["min"] = stats.Min
     response["max"] = stats.Max
     response["average"] = stats.Average
-}
+}*/
 
 // handling GET /devices
 func (handler *DeviceHandler) GetDevices(context *gin.Context) {
@@ -200,6 +202,29 @@ func (handler *DeviceHandler) GetDeviceByID(context *gin.Context) {
 	
 		handler.showACStats(context.Request.Context(), state.Payload, now)
 	}
+	if state.Type == "temp-sensor" {
+		now := time.Now().Unix()
+		cutoff24h := now - 86400
+		recentHistory, dbErr := handler.TelemetryStore.GetTelemetryHistory(context.Request.Context(), deviceID, 0, cutoff24h)
+		if dbErr != nil {
+			slog.Warn("failed to fetch recent temp history", "device_id", deviceID, "error", dbErr)
+		} else {
+			stats, _ := telemetry.CalculateTempState(recentHistory, "temp", now)
+			state.Payload["Min"] = stats.Min
+			state.Payload["Max"] = stats.Max
+			state.Payload["Average"] = stats.Average
+		}
+	}
+
+	if state.Type == "gas-sensor" {
+		recentHistory, dbErr := handler.TelemetryStore.GetTelemetryHistory(context.Request.Context(), deviceID, 5, 0)
+		if dbErr != nil {
+			slog.Warn("failed to fetch recent gas history", "device_id", deviceID, "error", dbErr)
+		} else if len(recentHistory) > 0 {
+			state.Payload["recent_events"] = recentHistory
+		}
+	}
+	
 
     context.JSON(http.StatusOK, state)
 }
@@ -239,10 +264,7 @@ func (handler *DeviceHandler) GetDeviceTelemetry(context *gin.Context) {
         response["source"] = "DynamoDB"
         response["data"] = telemetry.FilterTime(rawData, metric, period, now)
 
-        if state.Type == "temp-sensor" {
-            addTempStats(response, rawData, metric, deviceID, now)
-        }
-
+       
         if state.Type == "door-actuator" {
 			addDoorInsights(response, rawData, state, now)
 		}
@@ -259,19 +281,21 @@ func (handler *DeviceHandler) GetDeviceTelemetry(context *gin.Context) {
 		}
 
     } else {
-        response["source"] = "S3"
-        response["data"] = []telemetry.ChartPoint{} // will handle s3 later
-
-        if state.Type == "temp-sensor" {
-            cutoff24h := now - 86400
-            recentData, fetchErr := handler.TelemetryStore.GetTelemetryHistory(context.Request.Context(), deviceID, 0, cutoff24h)
-            if fetchErr != nil {
-                context.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch recent history"})
-                return
+        response["source"] = "S3 processed data"
+		if period == "1m" {
+            currentMonth := time.Now().Format("2006-01")
+            s3Key := fmt.Sprintf("processed-charts/%s/%s.json", deviceID, currentMonth)
+            s3Data, err := handler.S3Fetcher.GetMonthlyChart(context.Request.Context(), s3Key)  //download json file from s3        
+            if err != nil {
+                slog.Warn("failed to fetch monthly S3 chart", "device_id", deviceID, "error", err)
+                response["data"] = []telemetry.ChartPoint{} //to not cause app crash return an empty array
+            } else {
+                response["data"] = s3Data // The pre-calculated array from Python!
             }
-            addTempStats(response, recentData, metric, deviceID, now)
+        } else {
+             response["data"] = []telemetry.ChartPoint{}
         }
-   
+       
 }
 
     context.JSON(http.StatusOK, response)
@@ -299,7 +323,7 @@ func (handler *DeviceHandler) GetDeviceAlerts(context *gin.Context) {
 }
 func isHotTier(period string) bool {
     switch period {
-    case "1h", "24h", "7d", "1m":
+    case  "24h", "7d":
         return true
     default:
         return false
